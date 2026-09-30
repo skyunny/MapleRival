@@ -1,0 +1,21 @@
+[project]
+name = "maplerival"
+version = "0.1.0"
+description = "MapleStory rival EXP monitoring dashboard powered by NEXON Open API"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "cryptography>=45.0.0",
+    "fastapi>=0.115.0",
+    "httpx>=0.28.0",
+    "python-dotenv>=1.0.1",
+    "truststore>=0.10.0",
+    "uvicorn[standard]>=0.34.0",
+]
+
+[project.scripts]
+maplerival = "maplerival:main"
+
+[build-system]
+requires = ["uv_build>=0.12.13,<0.13.0"]
+build-backend = "uv_build"
