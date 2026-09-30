@@ -34,7 +34,7 @@ from .service import build_dashboard
 
 
 STATIC_DIR = Path(__file__).parent / "static"
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 
 @asynccontextmanager
@@ -220,7 +220,13 @@ async def refresh() -> dict:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "project": PROJECT_ROOT.name}
+    settings = get_settings()
+    return {
+        "status": "ok",
+        "project": PROJECT_ROOT.name,
+        "nexonApiConfigured": bool(settings.nexon_api_key),
+        "encryptionConfigured": bool(settings.encryption_secret),
+    }
 
 
 @app.get("/api/alerts/status")
