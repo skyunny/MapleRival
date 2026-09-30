@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -33,6 +34,7 @@ from .service import build_dashboard
 
 
 STATIC_DIR = Path(__file__).parent / "static"
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -90,6 +92,7 @@ async def select_character(request: CharacterRequest) -> dict:
     try:
         await collect_characters(settings, [name])
     except (NexonApiError, httpx.HTTPError) as exc:
+        logger.warning("Character lookup failed for %s: %s", name, exc)
         raise HTTPException(status_code=404, detail="캐릭터를 찾지 못했거나 데이터를 조회할 수 없습니다.") from exc
     return {"name": name, "dashboardUrl": f"/dashboard?owner={name}"}
 
