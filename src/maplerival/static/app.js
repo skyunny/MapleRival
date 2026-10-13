@@ -61,7 +61,8 @@ function forecastRow(forecast,ownerName) {
   if(!forecast.available)return `<article class="forecast-row"><div class="forecast-title"><strong>${rival}</strong></div><p class="forecast-note">${escapeHtml(forecastReasons[forecast.reason]||"예측할 수 없습니다.")}</p></article>`;
   const percent=Math.round(forecast.probability*100),ownerLeads=forecast.leader===ownerName,chaser=escapeHtml(forecast.lagger),leader=escapeHtml(forecast.leader),me=escapeHtml(ownerName);
   const headline=ownerLeads?`${chaser}이(가) ${forecast.horizonDays}일 안에 추월할 가능성`:`${me}이(가) ${forecast.horizonDays}일 안에 역전할 가능성`;
-  const eta=forecast.probability>=.3?`역전한다면 약 <b>${forecast.etaDays}일 뒤</b> (${shortDate(forecast.expectedDate).replace(".","/")} 전후)`:"30일 안에 역전할 가능성은 낮습니다.";
+  const when=`약 <b>${forecast.etaDays}일 뒤</b> (${shortDate(forecast.expectedDate).replace(".","/")} 전후)`;
+  const eta=forecast.probability>=.5?`예상 역전 시점: ${when}`:forecast.probability>=.3?`역전한다면 ${when}`:`${forecast.horizonDays}일 안에 역전할 가능성은 낮지만, 역전한다면 ${when}`;
   return `<article class="forecast-row"><div class="forecast-title"><strong>${me} vs ${rival}</strong><span>현재 ${leader} 선두 · 격차 ${trillion(forecast.gap)}</span></div><div class="forecast-meter"><div class="forecast-label"><span>${headline}</span><strong>${percent}%</strong></div><div class="progress-track"><i style="width:${percent}%"></i></div></div><p class="forecast-note">${eta}</p></article>`;
 }
 function renderForecasts(result) {
