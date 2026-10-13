@@ -1,4 +1,4 @@
-.env
+﻿.env
 .env.*
 !.env.example
 .venv/
@@ -9,9 +9,6 @@ __pycache__/
 .pytest_cache/
 .tools/
 .testdeps/
-data/*.json
-data/**/*.json
-
 catboost_info/
-data/**/*.sqlite
 reports/category_effects/daily_exp_gain.csv
+data/
