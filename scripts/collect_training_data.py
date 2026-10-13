@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import random
-from collections import defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -35,12 +35,17 @@ class ApiClient:
     async def get(self, path: str, params: dict[str, object]) -> dict:
         async with self.limit:
             for attempt in range(8):
-                response = await self.http.get(path, params=params)
-                if response.status_code != 429:
-                    break
-                await asyncio.sleep(min(20, 1.5 * (attempt + 1)))
-            response.raise_for_status()
-            return response.json()
+                try:
+                    response = await self.http.get(path, params=params)
+                    if response.status_code != 429 and response.status_code < 500:
+                        response.raise_for_status()
+                        return response.json()
+                    response.raise_for_status()
+                except (httpx.RequestError, httpx.HTTPStatusError):
+                    if attempt == 7:
+                        raise
+                    await asyncio.sleep(min(20, 1.5 * (attempt + 1)))
+            raise RuntimeError("NEXON API retry loop ended unexpectedly")
 
     async def ranking_page(self, day: date, page: int) -> list[dict]:
         payload = await self.get(
@@ -53,6 +58,18 @@ class ApiClient:
             "/character/basic", {"ocid": ocid, "date": day.isoformat()}
         )
 
+    async def ranking(self, ocid: str, day: date) -> dict | None:
+        payload = await self.get(
+            "/ranking/overall",
+            {"ocid": ocid, "date": day.isoformat(), "page": 1},
+        )
+        rows = payload.get("ranking") or []
+        return rows[0] if rows else None
+
+    async def ocid(self, nickname: str) -> str:
+        payload = await self.get("/id", {"character_name": nickname})
+        return payload["ocid"]
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -62,8 +79,67 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=20260930)
     parser.add_argument("--concurrency", type=int, default=12)
+    parser.add_argument("--checkpoint-every", type=int, default=10)
+    parser.add_argument("--checkpoint", type=Path)
+    parser.add_argument("--reserve-per-band", type=int, default=25)
+    parser.add_argument(
+        "--exclude-input",
+        type=Path,
+        action="append",
+        default=[],
+        help="JSON dataset whose nicknames and OCIDs must not be selected (repeatable)",
+    )
     parser.add_argument("--probe", action="store_true")
     return parser.parse_args()
+
+
+def atomic_write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f"{path.name}.tmp")
+    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def collection_parameters(args: argparse.Namespace) -> dict:
+    return {
+        "start_date": args.start.isoformat(),
+        "end_date": args.end.isoformat(),
+        "character_count": args.characters,
+        "random_seed": args.seed,
+        "daily_data_source": "ranking-overall",
+        "reserve_per_level_band": args.reserve_per_band,
+        "exclude_inputs": [str(path.resolve()) for path in args.exclude_input],
+    }
+
+
+def checkpoint_path(args: argparse.Namespace) -> Path:
+    return args.checkpoint or args.output.with_name(
+        f"{args.output.stem}.checkpoint.json"
+    )
+
+
+def save_checkpoint(
+    path: Path,
+    *,
+    args: argparse.Namespace,
+    cohort: list[dict],
+    completed_ocids: set[str],
+    records: list[dict],
+    errors: list[dict],
+    status: str,
+) -> None:
+    atomic_write_json(
+        path,
+        {
+            "version": 1,
+            "status": status,
+            "parameters": collection_parameters(args),
+            "cohort": cohort,
+            "completed_ocids": sorted(completed_ocids),
+            "records": records,
+            "missing_records": errors,
+        },
+    )
 
 
 def band_for(level: int) -> tuple[int, int] | None:
@@ -123,30 +199,41 @@ async def page_bounds_for_band(
 
 
 async def select_cohort(
-    client: ApiClient, day: date, size: int, seed: int
+    client: ApiClient,
+    day: date,
+    size: int,
+    seed: int,
+    excluded_names: set[str] | None = None,
+    excluded_ocids: set[str] | None = None,
 ) -> list[dict]:
     rng = random.Random(seed)
+    excluded_names = excluded_names or set()
+    excluded_ocids = excluded_ocids or set()
     last_page = await find_last_page(client, day)
     base, remainder = divmod(size, len(LEVEL_BANDS))
     quotas = {band: base + (index < remainder) for index, band in enumerate(LEVEL_BANDS)}
     selected: list[dict] = []
-    seen: set[str] = set()
+    seen_names: set[str] = set()
 
     print(f"ranking_last_page={last_page}", flush=True)
     for band in LEVEL_BANDS:
         first, last = await page_bounds_for_band(client, day, last_page, *band)
+        print(f"band_{band[0]}_{band[1]}_pages={first}-{last}", flush=True)
         pages = list(range(first, last + 1))
         rng.shuffle(pages)
         candidates: list[dict] = []
         for page in pages:
             for row in await client.ranking_page(day, page):
                 level = int(row["character_level"])
-                ocid = row.get("ocid")
-                if band_for(level) == band and ocid and ocid not in seen:
+                nickname = row["character_name"]
+                if (
+                    band_for(level) == band
+                    and nickname not in seen_names
+                    and nickname not in excluded_names
+                ):
                     candidates.append(
                         {
-                            "nickname": row["character_name"],
-                            "ocid": ocid,
+                            "nickname": nickname,
                             "selection_level": level,
                             "selection_date": day.isoformat(),
                         }
@@ -154,12 +241,29 @@ async def select_cohort(
             if len(candidates) >= quotas[band] * 4:
                 break
         rng.shuffle(candidates)
-        chosen = candidates[: quotas[band]]
+        async def resolve_candidate(character: dict) -> dict | None:
+            try:
+                character["ocid"] = await client.ocid(character["nickname"])
+                return character
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 400:
+                    return None
+                raise
+
+        resolved = await asyncio.gather(*(resolve_candidate(item) for item in candidates))
+        chosen = [
+            item
+            for item in resolved
+            if item is not None and item["ocid"] not in excluded_ocids
+        ][: quotas[band]]
         if len(chosen) != quotas[band]:
-            raise RuntimeError(f"Not enough candidates for levels {band}: {len(chosen)}")
+            raise RuntimeError(
+                f"Not enough resolvable candidates for levels {band}: {len(chosen)}"
+            )
         selected.extend(chosen)
-        seen.update(item["ocid"] for item in chosen)
+        seen_names.update(item["nickname"] for item in chosen)
         print(f"selected_{band[0]}_{band[1]}={len(chosen)} pages={first}-{last}", flush=True)
+    print(f"resolved_ocids={len(selected)}", flush=True)
     rng.shuffle(selected)
     return selected
 
@@ -172,7 +276,17 @@ async def collect_character(
 
     async def fetch(day: date) -> None:
         try:
-            row = await client.basic(character["ocid"], day)
+            row = await client.ranking(character["ocid"], day)
+            if row is None:
+                errors.append(
+                    {
+                        "ocid": character["ocid"],
+                        "date": day.isoformat(),
+                        "status": None,
+                        "reason": "ranking_not_found",
+                    }
+                )
+                return
             records.append(
                 {
                     "nickname": row.get("character_name") or character["nickname"],
@@ -209,38 +323,154 @@ async def main() -> None:
             print(json.dumps({"row_count": len(rows), "min_level": min(levels), "max_level": max(levels)}))
             return
 
-        cohort = await select_cohort(client, args.start, args.characters, args.seed)
+        checkpoint = checkpoint_path(args)
+        if checkpoint.exists():
+            saved = json.loads(checkpoint.read_text(encoding="utf-8"))
+            if saved.get("version") != 1:
+                raise SystemExit(f"Unsupported checkpoint version: {saved.get('version')}")
+            if saved.get("parameters") != collection_parameters(args):
+                raise SystemExit("Checkpoint parameters do not match this collection request")
+            cohort = saved["cohort"]
+            completed_ocids = set(saved.get("completed_ocids", []))
+            all_records = saved.get("records", [])
+            all_errors = saved.get("missing_records", [])
+            print(
+                f"resume checkpoint={checkpoint.resolve()} "
+                f"completed={len(completed_ocids)}/{len(cohort)}",
+                flush=True,
+            )
+        else:
+            excluded_names: set[str] = set()
+            excluded_ocids: set[str] = set()
+            for path in args.exclude_input:
+                excluded = json.loads(path.read_text(encoding="utf-8"))
+                for character in excluded.get("characters", []):
+                    if character.get("nickname"):
+                        excluded_names.add(character["nickname"])
+                    if character.get("ocid"):
+                        excluded_ocids.add(character["ocid"])
+            candidate_count = args.characters + args.reserve_per_band * len(LEVEL_BANDS)
+            cohort = await select_cohort(
+                client,
+                args.start,
+                candidate_count,
+                args.seed,
+                excluded_names,
+                excluded_ocids,
+            )
+            completed_ocids: set[str] = set()
+            all_records: list[dict] = []
+            all_errors: list[dict] = []
+            save_checkpoint(
+                checkpoint,
+                args=args,
+                cohort=cohort,
+                completed_ocids=completed_ocids,
+                records=all_records,
+                errors=all_errors,
+                status="collecting",
+            )
+            print(f"checkpoint initialized={checkpoint.resolve()}", flush=True)
+
         days = [
             args.start + timedelta(days=offset)
             for offset in range((args.end - args.start).days + 1)
         ]
-        all_records: list[dict] = []
-        all_errors: list[dict] = []
+        newly_completed = 0
         for index, character in enumerate(cohort, start=1):
+            if character["ocid"] in completed_ocids:
+                continue
             records, errors = await collect_character(client, character, days)
             all_records.extend(records)
             all_errors.extend(errors)
-            if index % 10 == 0 or index == len(cohort):
-                print(f"characters={index}/{len(cohort)} records={len(all_records)} errors={len(all_errors)}", flush=True)
+            completed_ocids.add(character["ocid"])
+            newly_completed += 1
+            if newly_completed % args.checkpoint_every == 0 or len(completed_ocids) == len(cohort):
+                save_checkpoint(
+                    checkpoint,
+                    args=args,
+                    cohort=cohort,
+                    completed_ocids=completed_ocids,
+                    records=all_records,
+                    errors=all_errors,
+                    status="collecting",
+                )
+                print(
+                    f"checkpoint characters={len(completed_ocids)}/{len(cohort)} "
+                    f"records={len(all_records)} errors={len(all_errors)}",
+                    flush=True,
+                )
 
-        all_records.sort(key=lambda item: (item["nickname"], item["date"]))
+        records_per_ocid: dict[str, int] = {}
+        for record in all_records:
+            records_per_ocid[record["ocid"]] = records_per_ocid.get(record["ocid"], 0) + 1
+        ocids_with_errors = {error["ocid"] for error in all_errors}
+        base, remainder = divmod(args.characters, len(LEVEL_BANDS))
+        final_cohort: list[dict] = []
+        complete_by_band: dict[tuple[int, int], list[dict]] = {}
+        for band_index, band in enumerate(LEVEL_BANDS):
+            quota = base + (band_index < remainder)
+            valid = [
+                character
+                for character in cohort
+                if band_for(character["selection_level"]) == band
+                and character["ocid"] not in ocids_with_errors
+                and records_per_ocid.get(character["ocid"]) == len(days)
+            ]
+            complete_by_band[band] = valid
+            final_cohort.extend(valid[:quota])
+
+        # Ranking history can be unavailable disproportionately in one level band.
+        # Preserve the per-band quotas where possible, then fill any shortfall from
+        # complete reserve characters in the other bands rather than discarding an
+        # otherwise sufficient checkpoint.
+        if len(final_cohort) < args.characters:
+            selected_ocids = {character["ocid"] for character in final_cohort}
+            reserves = [
+                character
+                for character in cohort
+                if character["ocid"] not in selected_ocids
+                and character["ocid"] not in ocids_with_errors
+                and records_per_ocid.get(character["ocid"]) == len(days)
+            ]
+            needed = args.characters - len(final_cohort)
+            if len(reserves) < needed:
+                raise RuntimeError(
+                    f"Only {len(final_cohort) + len(reserves)} complete characters; "
+                    f"need {args.characters}. Collect more reserve candidates."
+                )
+            final_cohort.extend(reserves[:needed])
+
+        final_ocids = {character["ocid"] for character in final_cohort}
+        final_records = [record for record in all_records if record["ocid"] in final_ocids]
+        final_errors = [error for error in all_errors if error["ocid"] in final_ocids]
+        final_records.sort(key=lambda item: (item["nickname"], item["date"]))
         payload = {
             "metadata": {
                 "start_date": args.start.isoformat(),
                 "end_date": args.end.isoformat(),
-                "character_count": len(cohort),
-                "record_count": len(all_records),
+                "character_count": len(final_cohort),
+                "candidate_count": len(cohort),
+                "record_count": len(final_records),
                 "selection_method": "equal stratified random sample by 10-level band from start-date overall ranking",
                 "level_bands": [list(band) for band in LEVEL_BANDS],
                 "random_seed": args.seed,
-                "missing_record_count": len(all_errors),
+                "missing_record_count": len(final_errors),
             },
-            "characters": cohort,
-            "records": all_records,
-            "missing_records": all_errors,
+            "characters": final_cohort,
+            "records": final_records,
+            "missing_records": final_errors,
         }
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(args.output, payload)
+        save_checkpoint(
+            checkpoint,
+            args=args,
+            cohort=cohort,
+            completed_ocids=completed_ocids,
+            records=all_records,
+            errors=all_errors,
+            status="complete",
+        )
         print(f"output={args.output.resolve()}", flush=True)
     finally:
         await client.close()
