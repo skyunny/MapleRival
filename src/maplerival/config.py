@@ -18,6 +18,8 @@ class Settings:
     own_character_name: str = "탕무스"
     rival_character_name: str = "꽃게쥬"
     history_days: int = 15
+    # 30 daily gains need 31 snapshots; the crossover model looks back 30 days.
+    forecast_snapshot_days: int = 31
     alert_interval_seconds: int = 3600
 
 def get_settings() -> Settings:

@@ -19,7 +19,8 @@ NEXON Open API의 메이플스토리 종합 랭킹 데이터를 매일 저장하
 - 캐릭터명 검색 전용 랜딩 페이지
 - 내 캐릭터별 라이벌 최대 3명 등록·삭제
 - 내 캐릭터를 포함한 최대 4명 비교 차트
-- 라이벌 등록 즉시 최근 15일 데이터 수집
+- 라이벌 등록 즉시 최근 30일 데이터 수집 (이미 저장된 날짜는 건너뜀)
+- 라이벌별 30일 내 역전 확률·예상 역전일 예측 (CatBoost, `reports/crossover/README.md` 참고)
 
 ## 실행
 
@@ -35,7 +36,7 @@ uv run uvicorn maplerival.main:app --reload
 ## API
 
 - `GET /api/dashboard`: 저장된 비교 데이터
-- `POST /api/refresh`: 최근 15일 수집 및 저장
+- `POST /api/refresh`: 최근 30일 수집 및 저장 (차트는 최근 15일 표시)
 - `POST /api/characters/select`: 내 캐릭터 검색 및 데이터 준비
 - `GET /api/owners/{name}/dashboard`: 내 캐릭터와 등록 라이벌 조회
 - `POST /api/owners/{name}/rivals`: 라이벌 등록 및 데이터 수집

@@ -6,7 +6,7 @@ import httpx
 import truststore
 
 from .config import Settings
-from .database import upsert_character, upsert_snapshots
+from .database import snapshot_dates, upsert_character, upsert_snapshots
 
 
 BASE_URL = "https://open.api.nexon.com/maplestory/v1"
@@ -65,8 +65,10 @@ async def collect_characters(settings: Settings, names: tuple[str, ...] | list[s
         raise NexonApiError(".env에 NEXON_API_KEY가 없습니다.")
 
     end_day = date.today() - timedelta(days=1)
-    # One extra day is required to calculate the first displayed day's gain.
-    days = [end_day - timedelta(days=offset) for offset in reversed(range(settings.history_days + 1))]
+    # One extra day is required to calculate the first displayed day's gain; the
+    # crossover forecast needs a longer window than the charts.
+    window = max(settings.history_days + 1, settings.forecast_snapshot_days)
+    days = [end_day - timedelta(days=offset) for offset in reversed(range(window))]
     client = NexonClient(settings.nexon_api_key)
     collected: dict[str, int] = {}
     try:
@@ -85,7 +87,11 @@ async def collect_characters(settings: Settings, names: tuple[str, ...] | list[s
                 datetime.now().astimezone().isoformat(timespec="seconds"),
             )
             snapshots = []
+            # Past daily rankings do not change, so only fetch days not stored yet.
+            stored = snapshot_dates(settings.database_path, character_id)
             for day in days:
+                if day.isoformat() in stored and day != end_day:
+                    continue
                 item = await client.ranking(ocid, day.isoformat())
                 if item:
                     snapshots.append(

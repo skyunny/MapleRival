@@ -29,6 +29,7 @@ from .multi_alerting import (
     notify_rival_removed,
     register_owner_webhook,
 )
+from .forecast import build_forecasts
 from .nexon import NexonApiError, collect_characters, collect_history
 from .service import build_dashboard
 
@@ -108,6 +109,7 @@ async def owner_dashboard(owner_name: str) -> dict:
         "owner": owner_name,
         "rivals": rivals,
         "maximumRivals": 3,
+        "forecasts": build_forecasts(settings.database_path, owner_name, rivals),
         "dashboard": build_dashboard(
             settings.database_path, settings.history_days, [owner_name, *rivals]
         ),

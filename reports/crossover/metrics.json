@@ -1,0 +1,197 @@
+{
+  "generated_at": "2026-10-13T15:58:30.990960+00:00",
+  "input": "data\\maple_exp_balanced_8000_2026-06-26_2026-09-26.json",
+  "design": {
+    "lookback_days": 30,
+    "horizon_days": 30,
+    "origins": [
+      30,
+      62
+    ],
+    "neighbors_per_character": 5,
+    "pair_anchor_day": 30,
+    "seed": 20261014,
+    "split": {
+      "train": 4800,
+      "validation": 1600,
+      "test": 1600
+    },
+    "pairs": {
+      "train": 23985,
+      "validation": 7985,
+      "test": 7985
+    },
+    "samples": {
+      "train": 734393,
+      "validation": 248707,
+      "test": 246234
+    },
+    "prevalence": {
+      "train": 0.25031692840209535,
+      "validation": 0.2229933214585838,
+      "test": 0.23022815695639107
+    }
+  },
+  "classification_test": {
+    "catboost": {
+      "roc_auc": 0.8212381351380754,
+      "average_precision": 0.6262613480442788,
+      "brier": 0.128571616955624,
+      "log_loss": 0.40594317819657827,
+      "precision": 0.6893648702823435,
+      "recall": 0.4246604339389663,
+      "f1": 0.525564336549797
+    },
+    "linear_extrapolation": {
+      "roc_auc": 0.6037658373616375,
+      "average_precision": 0.30627322538697077,
+      "brier": 0.2194290469157234,
+      "log_loss": 3.0315311580048223,
+      "precision": 0.5558074130042396,
+      "recall": 0.23356853060504498,
+      "f1": 0.32891582725770996
+    },
+    "base_rate": {
+      "roc_auc": 0.5,
+      "average_precision": 0.23022815695639107,
+      "brier": 0.1776267114390522,
+      "log_loss": 0.5406472285179165,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "auc_difference_catboost_minus_linear": {
+      "mean": 0.2175035859940697,
+      "ci95": [
+        0.20972200822999656,
+        0.22672026645522247
+      ]
+    }
+  },
+  "eta_test_crossers_only": {
+    "count": 56690,
+    "catboost": {
+      "mae_days": 5.901317168938772,
+      "median_abs_error_days": 4.643011254719126,
+      "within_3_days": 0.3630269888869289,
+      "within_7_days": 0.6522137943199859
+    },
+    "linear_extrapolation": {
+      "mae_days": 13.978899713379318,
+      "median_abs_error_days": 13.465157507986733,
+      "within_3_days": 0.17465161404127713,
+      "within_7_days": 0.3172517198800494
+    },
+    "train_median_constant": {
+      "mae_days": 7.647380490386311,
+      "median_abs_error_days": 7.0,
+      "within_3_days": 0.2335508908096666,
+      "within_7_days": 0.5383665549479626
+    },
+    "by_actual_days_bucket": {
+      "1-7": {
+        "count": 21733,
+        "catboost_mae": 4.698358587316323,
+        "linear_mae": 18.758309617877547
+      },
+      "8-14": {
+        "count": 12724,
+        "catboost_mae": 4.1361165640359205,
+        "linear_mae": 16.15503109778689
+      },
+      "15-30": {
+        "count": 22233,
+        "catboost_mae": 8.087450904880146,
+        "linear_mae": 8.061569115184659
+      }
+    }
+  },
+  "feature_importance_classifier": [
+    {
+      "feature": "log_gap_ratio",
+      "importance": 12.790395970668564
+    },
+    {
+      "feature": "rate_diff_ratio",
+      "importance": 8.898687802784567
+    },
+    {
+      "feature": "log_lag_gain_30d",
+      "importance": 8.770766554122387
+    },
+    {
+      "feature": "log_lead_gain_7d",
+      "importance": 8.58994758105261
+    },
+    {
+      "feature": "lag_level",
+      "importance": 8.300436783215794
+    },
+    {
+      "feature": "log_lag_gain_14d",
+      "importance": 8.048702629622756
+    },
+    {
+      "feature": "log_lag_gain_7d",
+      "importance": 6.1228278107111604
+    },
+    {
+      "feature": "gap_over_lead_30d_gain",
+      "importance": 5.67340805408888
+    },
+    {
+      "feature": "linear_eta_days",
+      "importance": 5.5792033985833145
+    },
+    {
+      "feature": "lag_active_ratio",
+      "importance": 5.114816908534732
+    },
+    {
+      "feature": "lead_level",
+      "importance": 4.933044313837222
+    },
+    {
+      "feature": "lag_trend_7_30",
+      "importance": 4.765303952631707
+    },
+    {
+      "feature": "log_lead_gain_14d",
+      "importance": 4.536399220606061
+    },
+    {
+      "feature": "log_gap_over_lead_30d",
+      "importance": 3.191549467988075
+    },
+    {
+      "feature": "lead_active_ratio",
+      "importance": 1.6903003147299598
+    },
+    {
+      "feature": "log_lead_gain_30d",
+      "importance": 1.6332506374359297
+    },
+    {
+      "feature": "lead_trend_7_30",
+      "importance": 1.0304519961508687
+    },
+    {
+      "feature": "level_diff",
+      "importance": 0.3305066032354008
+    },
+    {
+      "feature": "origin_weekday",
+      "importance": 0.0
+    }
+  ],
+  "best_iterations": {
+    "classifier": 535,
+    "regressor": 379
+  },
+  "notes": [
+    "Characters are split before pairing; no character is shared across splits.",
+    "Samples from the same pair are correlated; bootstrap resamples whole pairs.",
+    "Pairs whose members both gained no EXP in the lookback window are excluded.",
+    "ETA metrics use only samples that really cross within the horizon."
+  ]
+}

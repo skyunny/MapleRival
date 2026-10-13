@@ -18,6 +18,10 @@
         <div class="status-card"><span class="status-label">CURRENT LEADER</span><strong id="leader">—</strong><span id="gap">라이벌을 등록해 주세요</span><small id="latestDate">현재값 확인 —</small></div>
       </section>
       <section id="characterCards" class="character-grid" aria-label="캐릭터 현황"></section>
+      <section id="forecastSection" class="chart-card forecast-card" hidden>
+        <div class="section-heading"><div><p class="eyebrow">CROSSOVER FORECAST</p><h2>역전 시점 예측</h2></div><span class="unit">최근 30일 흐름 기반 · 참고용</span></div>
+        <div id="forecastList" class="forecast-list"></div>
+      </section>
       <section class="chart-card">
         <div class="section-heading"><div><p class="eyebrow">TOTAL EXPERIENCE</p><h2>경험치 추이</h2></div><div id="lineLegend" class="legend"></div></div>
         <div id="lineChart" class="chart" aria-label="경험치 총량 꺾은선그래프"></div>
@@ -35,7 +39,7 @@
         <button id="closeDialog" class="dialog-close" value="cancel" type="button" aria-label="닫기">×</button>
         <p class="eyebrow">ADD NEW RIVAL</p>
         <h2>라이벌 캐릭터 등록</h2>
-        <p class="dialog-copy">등록 즉시 최근 15일 경험치 데이터를 수집합니다.</p>
+        <p class="dialog-copy">등록 즉시 최근 30일 경험치 데이터를 수집합니다.</p>
         <input id="rivalName" maxlength="12" autocomplete="off" placeholder="라이벌 캐릭터 닉네임" required />
         <button id="addRivalButton" class="primary-button" type="submit">라이벌 추가</button>
         <p id="dialogMessage" class="message" role="status"></p>
@@ -53,6 +57,6 @@
         <p id="webhookMessage" class="message" role="status"></p>
       </form>
     </dialog>
-    <script src="/static/app.js?v=20260930-level-labels" defer></script>
+    <script src="/static/app.js?v=20261014-forecast" defer></script>
   </body>
 </html>

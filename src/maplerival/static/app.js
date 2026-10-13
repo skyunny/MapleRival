@@ -55,8 +55,23 @@ function characterCard(character, index, isOwner) {
 }
 function addCard() { return `<button class="add-rival-card" id="openRivalDialog" type="button"><span class="plus-ring">+</span><strong>라이벌 캐릭터를 등록하세요.</strong><small>최대 3명까지 비교할 수 있어요</small></button>`; }
 
+const forecastReasons={model:"예측 모델을 불러오지 못했습니다.",history:"최근 31일 연속 기록이 아직 부족합니다.",level:"학습 범위(Lv.260 이상) 밖의 캐릭터입니다.",tie:"두 캐릭터의 누적 경험치가 같습니다.",inactive:"최근 30일간 두 캐릭터 모두 경험치 변화가 없습니다."};
+function forecastRow(forecast,ownerName) {
+  const rival=escapeHtml(forecast.rival);
+  if(!forecast.available)return `<article class="forecast-row"><div class="forecast-title"><strong>${rival}</strong></div><p class="forecast-note">${escapeHtml(forecastReasons[forecast.reason]||"예측할 수 없습니다.")}</p></article>`;
+  const percent=Math.round(forecast.probability*100),ownerLeads=forecast.leader===ownerName,chaser=escapeHtml(forecast.lagger),leader=escapeHtml(forecast.leader),me=escapeHtml(ownerName);
+  const headline=ownerLeads?`${chaser}이(가) ${forecast.horizonDays}일 안에 추월할 가능성`:`${me}이(가) ${forecast.horizonDays}일 안에 역전할 가능성`;
+  const eta=forecast.probability>=.3?`역전한다면 약 <b>${forecast.etaDays}일 뒤</b> (${shortDate(forecast.expectedDate).replace(".","/")} 전후)`:"30일 안에 역전할 가능성은 낮습니다.";
+  return `<article class="forecast-row"><div class="forecast-title"><strong>${me} vs ${rival}</strong><span>현재 ${leader} 선두 · 격차 ${trillion(forecast.gap)}</span></div><div class="forecast-meter"><div class="forecast-label"><span>${headline}</span><strong>${percent}%</strong></div><div class="progress-track"><i style="width:${percent}%"></i></div></div><p class="forecast-note">${eta}</p></article>`;
+}
+function renderForecasts(result) {
+  const section=$("#forecastSection"),forecasts=result.forecasts||[];
+  section.hidden=!forecasts.length;
+  $("#forecastList").innerHTML=forecasts.map((forecast)=>forecastRow(forecast,result.owner)).join("");
+}
+
 function render(result) {
-  pageData=result; const data=result.dashboard;
+  pageData=result; const data=result.dashboard; renderForecasts(result);
   $("#ownerHeading").textContent=result.owner;
   $("#leader").textContent=data.leader||result.owner;
   $("#gap").textContent=result.rivals.length?`${data.leader} 선두 · 상위 두 캐릭터 ${data.gap?trillion(data.gap):"레벨 차이"}`:"라이벌을 등록해 주세요";
@@ -81,6 +96,6 @@ $("#refreshButton").addEventListener("click",refresh);
 $("#webhookButton").addEventListener("click",()=>{$("#webhookUrl").value="";$("#webhookMessage").textContent="";$("#webhookDialog").showModal();$("#webhookUrl").focus();});
 $("#closeDialog").addEventListener("click",()=>$("#rivalDialog").close());
 $("#closeWebhookDialog").addEventListener("click",()=>$("#webhookDialog").close());
-$("#rivalForm").addEventListener("submit",async(event)=>{event.preventDefault();const name=$("#rivalName").value.trim(),button=$("#addRivalButton");if(!name)return;button.disabled=true;button.textContent="15일 수집 중…";$("#dialogMessage").className="message";$("#dialogMessage").textContent=`${name}님의 데이터를 준비하고 있습니다.`;try{const response=await fetch(`/api/owners/${encodeURIComponent(owner)}/rivals`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name})}),result=await response.json();if(!response.ok)throw new Error(result.detail||"라이벌을 등록하지 못했습니다.");$("#rivalDialog").close();render(result);await loadWebhookStatus();$("#message").className=result.notification?.configured&&!result.notification.sent?"message error":"message";$("#message").textContent=`${name}님을 새로운 라이벌로 등록했습니다.${eventNotice(result.notification)}`;}catch(error){$("#dialogMessage").className="message error";$("#dialogMessage").textContent=error.message;}finally{button.disabled=false;button.textContent="라이벌 추가";}});
+$("#rivalForm").addEventListener("submit",async(event)=>{event.preventDefault();const name=$("#rivalName").value.trim(),button=$("#addRivalButton");if(!name)return;button.disabled=true;button.textContent="30일 수집 중…";$("#dialogMessage").className="message";$("#dialogMessage").textContent=`${name}님의 데이터를 준비하고 있습니다.`;try{const response=await fetch(`/api/owners/${encodeURIComponent(owner)}/rivals`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name})}),result=await response.json();if(!response.ok)throw new Error(result.detail||"라이벌을 등록하지 못했습니다.");$("#rivalDialog").close();render(result);await loadWebhookStatus();$("#message").className=result.notification?.configured&&!result.notification.sent?"message error":"message";$("#message").textContent=`${name}님을 새로운 라이벌로 등록했습니다.${eventNotice(result.notification)}`;}catch(error){$("#dialogMessage").className="message error";$("#dialogMessage").textContent=error.message;}finally{button.disabled=false;button.textContent="라이벌 추가";}});
 $("#webhookForm").addEventListener("submit",async(event)=>{event.preventDefault();const url=$("#webhookUrl").value.trim(),button=$("#saveWebhookButton");if(!url)return;button.disabled=true;button.textContent="현재 상태 저장 중…";$("#webhookMessage").className="message";$("#webhookMessage").textContent="모든 라이벌의 최초 격차 상태를 확인하고 있습니다.";try{const response=await fetch(`/api/owners/${encodeURIComponent(owner)}/webhook`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({url})}),result=await response.json();if(!response.ok)throw new Error(result.detail||"웹훅을 저장하지 못했습니다.");$("#webhookDialog").close();await loadWebhookStatus();const sent=result.notification?.sent;$("#message").className=sent?"message":"message error";$("#message").textContent=sent?`Discord 알림을 연결하고 라이벌 ${result.rivalStates.length}명의 최초 상태를 저장했습니다. 시작 메시지를 발송했습니다.`:`웹훅 설정은 저장됐지만 시작 메시지 발송에 실패했습니다.`;}catch(error){$("#webhookMessage").className="message error";$("#webhookMessage").textContent=error.message;}finally{button.disabled=false;button.textContent="웹훅 저장";}});
 Promise.all([loadDashboard(),loadWebhookStatus()]).catch((error)=>{$("#message").className="message error";$("#message").textContent=error.message;});

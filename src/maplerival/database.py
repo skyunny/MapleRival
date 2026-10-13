@@ -182,6 +182,35 @@ def upsert_snapshots(path: Path, character_id: int, snapshots: Iterable[dict]) -
             )
 
 
+def snapshot_dates(path: Path, character_id: int) -> set[str]:
+    with closing(connect(path)) as connection:
+        rows = connection.execute(
+            "SELECT snapshot_date FROM exp_snapshots WHERE character_id = ?", (character_id,)
+        ).fetchall()
+    return {row["snapshot_date"] for row in rows}
+
+
+def recent_snapshots(path: Path, name: str, limit: int) -> list[dict]:
+    """Latest ``limit`` snapshots of one character, oldest first."""
+
+    with closing(connect(path)) as connection:
+        rows = connection.execute(
+            """
+            SELECT s.snapshot_date, s.level, s.exp
+            FROM exp_snapshots s
+            JOIN characters c ON c.id = s.character_id
+            WHERE c.name = ?
+            ORDER BY s.snapshot_date DESC
+            LIMIT ?
+            """,
+            (name, limit),
+        ).fetchall()
+    return [
+        {"date": row["snapshot_date"], "level": row["level"], "exp": row["exp"]}
+        for row in reversed(rows)
+    ]
+
+
 def dashboard_rows(path: Path, limit: int, names: list[str] | None = None) -> list[sqlite3.Row]:
     with closing(connect(path)) as connection:
         name_filter = ""
